@@ -1,0 +1,27 @@
+Hyperparameter Testing:
+    Path length k - 10 25 50 75 100
+    Delegation Threshold d w * 9/10, w, w * 3/2, w * 2, w * 3,  w * 5, w * 10
+    Rejection Threshold r
+        - Would like to show this for varying path lengths k 
+        - With r threshold test need to make sure problem is big enough to show improvement of 
+          sampling versus no sampling. If number of nodes used isn't large then delegation threshold
+          will be small and thus sampling won't be as effective.
+        - RMAT of v = 26, e = 1 Billion, showed improvment of when using r = 2 instead of r = 1, for varying k's.
+    When discussing reasoning for rejection threshold method, I think it would be a good idea to do it and compare it with the old
+    way of rejection sampling which was based purely on the degree of the vertex rather than considering path length and degree of
+    the vertex to estimate the number of samplings needed. Doing it this way allows for the r hyperparameter to be less relevant than them
+    original portion.
+
+Weak Scaling (Paths per Second)
+    1 2 4 8 16 32 64 128 256
+    v=26+node_scale 
+    e=16*(2^v)
+    p=100000 for undelegated, p=10000000 for delegated
+
+
+Strong Scaling (Paths per Second)
+    Large Scale Real World Graphs
+    LiveJournal... maybe?
+    Ask Trevor 
+    Undelegated vs. Delegated
+    4 8 16 32 64 128 256
