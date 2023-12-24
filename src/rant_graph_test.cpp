@@ -4,8 +4,8 @@
 #include <ygm/io/line_parser.hpp>
 #include <ygm/random.hpp>
 
-template<> ygm::ygm_ptr<RaNT_Graph<>> RaNT_Graph<>::self_ptr = NULL;
-template<> ygm::ygm_ptr<RaNT_Graph<long>> RaNT_Graph<long>::self_ptr = NULL;
+template<> ygm::ygm_ptr<RaNT_Graph<>> RaNT_Graph<>::pthis = NULL;
+// template<> ygm::ygm_ptr<RaNT_Graph<long>> RaNT_Graph<long>::pthis = NULL;
 
 int main(int argc, char** argv) {
 
@@ -20,7 +20,7 @@ int main(int argc, char** argv) {
     // RaNT_Graph 
     RaNT_Graph rant_graph = RaNT_Graph(world);
     // RaNT_Graph<int> rant_graph = RaNT_Graph<int>(world);
-    RaNT_Graph<long> rant_graph2 = RaNT_Graph<long>(world);
+    // RaNT_Graph<long> rant_graph2 = RaNT_Graph<long>(world);
 
     ygm::container::bag<std::pair<uint64_t,uint64_t>> graph_edges(world);
     // std::string filename = "/g/g20/lancef/graphs/facebook_combined.txt";
@@ -43,20 +43,22 @@ int main(int argc, char** argv) {
     }); 
 
     rant_graph.read_edges_from_container(graph_edges);
-    rant_graph2.read_edges_from_container(graph_edges);
+    // rant_graph2.read_edges_from_container(graph_edges);
     world.barrier();
  
     world.cout0("Taking walks on 1st RaNT-Graph");
     world.barrier();
-    if (world.rank0()) {
-      rant_graph.start_walk(10); 
-    }
 
-    world.barrier();
-    world.cout0("Now taking walks on 2nd RaNT-Graph");
-    if (world.rank0()) {
-      rant_graph2.start_walk(10); 
-    }
+    rant_graph.take_n_paths(4, 10);
+    // if (world.rank0()) {
+    //   rant_graph.start_walk(10); 
+    // }
+
+    // world.barrier();
+    // world.cout0("Now taking walks on 2nd RaNT-Graph");
+    // if (world.rank0()) {
+    //   rant_graph2.start_walk(10); 
+    // }
     // world.cout() << "I am rank: " << world.rank() << std::endl;   
     
     /*
