@@ -324,10 +324,8 @@ class RaNT_Graph {
                         uint32_t walk_length, uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
-
         // pthis->m_cs.async_insert(vertex);
         walk_length++;
-
         if (walk_length < l) {
             // walk_length++;
             VertexID next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
@@ -354,12 +352,10 @@ class RaNT_Graph {
                       uint64_t local_idx,
                       uint32_t walk_length,
                       uint32_t l, self_ygm_ptr_type pthis) {
-
         // pthis->m_comm.cout("Made it inside delegated step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
         // pthis->m_cs.async_insert(vertex);
         walk_length++;
-
         if (walk_length < l) { 
           VertexID next_vertex = pthis->m_local_delegated_adj_lists[vertex][local_idx]; 
           if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
@@ -373,6 +369,70 @@ class RaNT_Graph {
           } else {
             pthis->m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
           }
+        } else {
+          pthis->m_local_paths_finished++;
+        }    
+      }
+    };
+
+
+    struct async_bias_delegated_walk_step {            
+    
+      void operator()(VertexID vertex,
+                      uint64_t local_idx,
+                      uint32_t walk_length,
+                      uint32_t l, self_ygm_ptr_type pthis) {
+        // pthis->m_comm.cout("Made it inside delegated step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
+        // path.insert(vertex);
+        // pthis->m_cs.async_insert(vertex);
+        walk_length++;
+        if (walk_length < l) { 
+          VertexID next_vertex = pthis->m_local_delegated_adj_lists[vertex][local_idx]; 
+          if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
+            std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees[next_vertex]-1);
+            uint64_t global_idx = dis(pthis->m_rng);
+
+            pthis->m_comm.async(pthis->owner(global_idx),
+                                async_delegated_walk_step(), 
+                                next_vertex, 
+                                pthis->local_idx(global_idx), walk_length, l, pthis);
+          } else {
+            pthis->m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
+          }
+        } else {
+          pthis->m_local_paths_finished++;
+        }    
+      }
+    };
+
+    struct async_bias_walk_step {            
+      
+      void operator()(VertexID vertex,
+                        std::vector<VertexID> adj_list,
+                        uint32_t walk_length, uint32_t l, self_ygm_ptr_type pthis) {
+        // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
+        // path.insert(vertex);
+
+        // pthis->m_cs.async_insert(vertex);
+        walk_length++;
+
+        if (walk_length < l) {
+            VertexID next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
+            // Need to pick next_vertex based on local_alias_table. This can still be done in the same way, but now
+            // we need a different class variable instead of m_adj_lists, m_local_alias_tables. This is because
+            // it can be seen that this functor is called on the m_adj_lists.async_visit so similarly we need that but 
+            // for the alias tables
+
+            if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
+              std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees[next_vertex]-1);
+              uint64_t global_idx = dis(pthis->m_rng);
+              pthis->m_comm.async(pthis->owner(global_idx),
+                                  async_delegated_walk_step(),
+                                  next_vertex,
+                                  pthis->local_idx(global_idx), walk_length, l, pthis);
+            } else {
+              pthis->m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
+            }
         } else {
           pthis->m_local_paths_finished++;
         }    
