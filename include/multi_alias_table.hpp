@@ -29,7 +29,6 @@ class multi_alias_table {
             }
         };
 
-
         struct table_item { 
             double p; // prob item a is selected = p, prob item b is selected = (1 - p)
             item_id_type a;
@@ -58,6 +57,11 @@ class multi_alias_table {
                 m_local_items[itm.t_id].push_back(itm);
                 m_each_tables_local_weight[itm.t_id] += itm.weight; 
             });
+        }
+
+        void local_add_item (std::tuple<table_id_type, item_id_type, weight_type> i) {
+            item itm({std::get<0>(i), std::get<1>(i), std::get<2>(i)});
+            m_local_items[itm.t_id].push_back(itm);
         }
 
         // For debugging
@@ -106,7 +110,7 @@ class multi_alias_table {
             std::vector<double> global_table_w8s(table_ids.size()); // Global total weight for each table
             MPI_Allreduce(local_weights_vec.data(), global_table_w8s.data(), local_weights_vec.size(), MPI_DOUBLE, MPI_SUM, comm);
             m_comm.barrier();
-            m_comm.cout0("Completed collective communications in balance()");
+            // m_comm.cout0("Completed collective communications in balance()");
 
             ASSERT_RELEASE(ygm::is_same(table_ids.size(), m_comm));
             ASSERT_RELEASE(ygm::is_same(w8s_prfx_sum.size(), m_comm));
@@ -313,7 +317,7 @@ class multi_alias_table {
                     }
                 }
                 Visitor *vis = nullptr;
-                ygm::meta::apply_optional(*vis, std::make_tuple(ptr_MAT), std::forward_as_tuple(s, args...));
+                ygm::meta::apply_optional(*vis, std::make_tuple(ptr_MAT), std::forward_as_tuple(s, t_id, args...));
             };
 
             uint32_t dest_rank = m_rank_dist(m_rng);
