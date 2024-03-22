@@ -375,6 +375,7 @@ class RaNT_Graph {
       } else {
         if (m_delegated_vertex_degrees.find(v) != m_delegated_vertex_degrees.end()) {
           std::uniform_int_distribution<VertexID> dis(0, m_delegated_vertex_degrees.at(v)-1);
+          ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(v) > 0);
           uint32_t global_idx = dis(m_rng);
           // m_comm.cout0("Global_idx: ", global_idx);
           m_comm.async(owner(global_idx), 
@@ -622,13 +623,15 @@ class RaNT_Graph {
                         uint32_t walk_length, uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
+        // pthis->m_comm.cout("At vertex ", vertex);
         pthis->m_cs.async_insert(vertex);
         walk_length++;
-        if (walk_length < l) {
+        if (walk_length < l && adj_list.size() > 0) {
             // walk_length++;
             VertexID next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
             if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
               std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
+              ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(next_vertex) > 0);
               uint64_t global_idx = dis(pthis->m_rng);
               pthis->m_comm.async(pthis->owner(global_idx),
                                   async_delegated_walk_step(),
@@ -652,16 +655,17 @@ class RaNT_Graph {
                       uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside delegated step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
+        // pthis->m_comm.cout("At delegated vertex ", vertex);
         pthis->m_cs.async_insert(vertex);
         walk_length++;
         if (walk_length < l) { 
           // pthis->m_comm.cout0("HERE2, vertex: ", vertex);
           // pthis->m_comm.cout0("HERE2, del_adj_list size: ", pthis->m_local_delegated_adj_lists.size());
           // pthis->m_comm.cout0("HERE2, del_adj_list_size[vertex] size: ", pthis->m_local_delegated_adj_lists.at(vertex).size(), ", local_idx: ", local_idx);
-
           VertexID next_vertex = pthis->m_local_delegated_adj_lists.at(vertex).at(local_idx); 
           if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
             std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
+            ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(next_vertex) > 0);
             uint64_t global_idx = dis(pthis->m_rng);
 
             pthis->m_comm.async(pthis->owner(global_idx),

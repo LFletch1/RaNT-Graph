@@ -57,26 +57,27 @@ int main(int argc, char** argv) {
     world.barrier();
 
     timer.reset();
-    uint32_t n_walks = 100000;
+    uint32_t n_walks = 1000000;
     uint32_t walk_length = 50;
     rant_graph.take_n_walks(n_walks, walk_length);
     // rant_graph.take_n_paths(n_walks, 50);
 
     world.barrier();
 
-    world.cout0("Total time to take ", n_walks, " walks of length ",  walk_length, ": ", timer.elapsed(), " seconds.");
+    world.cout0("Total time to take ", n_walks, " walks of target length ",  walk_length, ": ", timer.elapsed(), " seconds.");
 
     ASSERT_RELEASE(rant_graph.paths_finished() == n_walks);
     
     uint64_t expected_total_steps = n_walks * walk_length;
     uint64_t actual_steps = rant_graph.m_cs.count_all();
 
+    world.cout0("Average walk length: ", (double) actual_steps / (double) n_walks);
     // rant_graph.m_cs.for_all([&](uint32_t v, uint32_t count){
     //   world.cout("Vertex: ", v, ", Visit Count: ", count);
     // });
 
-    // Only applies to walks where vertex visits are recorded
-    ASSERT_RELEASE(expected_total_steps == actual_steps);
+    // Only applies to walks where vertex visits are recorded and on undirected graphs
+    // ASSERT_RELEASE(expected_total_steps == actual_steps);
 
     return 0;
 }
