@@ -13,13 +13,13 @@
 #include <mpi.h>
 
 // template <typename VertexID, typename RNG>
-template <typename VertexID, typename RNG, typename Edge = std::pair<VertexID, VertexID>>
+template <typename VertexID, typename Edge = std::pair<VertexID, VertexID>>
 class RaNT_Graph {
 
-  using self_type          = RaNT_Graph<VertexID, RNG, Edge>;
+  using RNG                = ygm::default_random_engine<>;
+  using self_type          = RaNT_Graph<VertexID, Edge>;
   using self_ygm_ptr_type  = ygm::ygm_ptr<self_type>;
   // using MAT                = multi_alias_table<VertexID, VertexID, double, RNG>;
-
 
   private:
 
@@ -33,6 +33,8 @@ class RaNT_Graph {
             ar(p, a, b);
         }
     };
+
+    // using alias_table_item = std::tuple<double, VertexID, VertexID>;
 
 
     ygm::comm&                                            m_comm;
@@ -370,14 +372,13 @@ class RaNT_Graph {
         if (m_delegated_vertex_degrees.find(v) != m_delegated_vertex_degrees.end()) {
           m_delegated_alias_tables.async_sample(v, async_bias_delegated_walk_step(), 0, target_walk_length, pthis);
         } else {
-          // DONT FORGET HERE
+          m_alias_tables.async_visit(v, async_bias_walk_step(), 0, target_walk_length, pthis);
         }
       } else {
         if (m_delegated_vertex_degrees.find(v) != m_delegated_vertex_degrees.end()) {
           std::uniform_int_distribution<VertexID> dis(0, m_delegated_vertex_degrees.at(v)-1);
           ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(v) > 0);
           uint32_t global_idx = dis(m_rng);
-          // m_comm.cout0("Global_idx: ", global_idx);
           m_comm.async(owner(global_idx), 
                       async_delegated_walk_step(), 
                       v, 
@@ -627,7 +628,6 @@ class RaNT_Graph {
         pthis->m_cs.async_insert(vertex);
         walk_length++;
         if (walk_length < l && adj_list.size() > 0) {
-            // walk_length++;
             VertexID next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
             if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
               std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
@@ -659,9 +659,6 @@ class RaNT_Graph {
         pthis->m_cs.async_insert(vertex);
         walk_length++;
         if (walk_length < l) { 
-          // pthis->m_comm.cout0("HERE2, vertex: ", vertex);
-          // pthis->m_comm.cout0("HERE2, del_adj_list size: ", pthis->m_local_delegated_adj_lists.size());
-          // pthis->m_comm.cout0("HERE2, del_adj_list_size[vertex] size: ", pthis->m_local_delegated_adj_lists.at(vertex).size(), ", local_idx: ", local_idx);
           VertexID next_vertex = pthis->m_local_delegated_adj_lists.at(vertex).at(local_idx); 
           if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
             std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
@@ -681,79 +678,81 @@ class RaNT_Graph {
       }
     };
 
-
+    
     VertexID bias_sample_edge(VertexID v) {
-      /* Sample outgoing edge of v, which is owned by the calling process i.e. 1D partitioned */
-      // alias_table_item = select_randomly_from_vec(m_local_alias_tables[v].begin(), m_local_alias_tables[v].end(), m_rng);
-
+      // Sample outgoing edge of v. Should be called by process which owns v via 1D partitioned
+      // ygm::container::map<VertexID, std::vector<alias_table_item>>  m_alias_tables;
+      alias_table_item itm = select_randomly_from_vec(m_alias_tables[v].begin(), m_alias_tables[v].end(), m_rng); 
+      // std::uniform_real_distribution<double> zero_one_dist(0.0, 1.0);
+      // double coin_flip = zero_one_dist(ptr_MAT->m_rng);
+      VertexID s;
+      if (itm.p = 1) {
+          s = itm.a;
+      } else {
+          std::uniform_real_distribution<double> zero_one_dist(0.0, 1.0);
+          double d = zero_one_dist(m_rng);
+          if (d < itm.p) {
+              s = itm.a;
+          } else {
+              s = itm.b;
+          }
+      }
+      return s;
     }
-
-    
+ 
     struct async_bias_delegated_walk_step {            
-    
-      void operator()(VertexID sampled_vertex,
-                      VertexID prev_vertex,
+      /* next_vertex is the vertex sampled from curr_vertex distributed alias table */
+      /* No single process owns curr_vertex, every vertex owns an equal portion of curr_vertex's */
+      /* alias table thus the processor running this is code is randomly chosen. */
+      void operator()(VertexID next_vertex,
+                      VertexID curr_vertex,
                       uint32_t walk_length,
                       uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside delegated step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
-        // pthis->m_cs.async_insert(vertex);
-        /*
+        pthis->m_cs.async_insert(curr_vertex);
         walk_length++;
         if (walk_length < l) { 
-          VertexID next_vertex = pthis->m_local_delegated_adj_lists[vertex][local_idx]; 
           if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
-            std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees[next_vertex]-1);
-            uint64_t global_idx = dis(pthis->m_rng);
-
-            pthis->m_comm.async(pthis->owner(global_idx),
-                                async_delegated_walk_step(), 
-                                next_vertex, 
-                                pthis->local_idx(global_idx), walk_length, l, pthis);
+            pthis->m_delegated_alias_tables.async_sample(next_vertex, 
+                                                         async_bias_delegated_walk_step(),
+                                                         next_vertex,
+                                                         walk_length,
+                                                         l,
+                                                         pthis);
           } else {
-            pthis->m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
+            pthis->m_alias_tables.async_visit(next_vertex, async_bias_walk_step(), walk_length, l, pthis);
           }
         } else {
           pthis->m_local_paths_finished++;
         }    
-      */
       }
     };
 
     struct async_bias_walk_step {            
-      
+      /* This functor is called by the process which owns the vertex argument. Vertex should not be delegated. */
       void operator()(VertexID vertex,
-                        std::vector<VertexID> adj_list,
+                        std::vector<alias_table_item> alias_table,
                         uint32_t walk_length, uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
-
-        // pthis->m_cs.async_insert(vertex);
-
-        /*
+        pthis->m_cs.async_insert(vertex); 
         walk_length++;
-
-        if (walk_length < l) {
-            VertexID next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
-            // Need to pick next_vertex based on local_alias_table. This can still be done in the same way, but now
-            // we need a different class variable instead of m_adj_lists, m_local_alias_tables. This is because
-            // it can be seen that this functor is called on the m_adj_lists.async_visit so similarly we need that but 
-            // for the alias tables
-
+        if (walk_length < l && alias_table.size() > 0) {
+            VertexID next_vertex = pthis->bias_sample_edge(vertex);
             if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
-              std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees[next_vertex]-1);
-              uint64_t global_idx = dis(pthis->m_rng);
-              pthis->m_comm.async(pthis->owner(global_idx),
-                                  async_delegated_walk_step(),
-                                  next_vertex,
-                                  pthis->local_idx(global_idx), walk_length, l, pthis);
+              pthis->m_delegated_alias_tables.async_sample(next_vertex, 
+                                                           async_bias_delegated_walk_step(),
+                                                           next_vertex,
+                                                           walk_length,
+                                                           l,
+                                                           pthis);
             } else {
-              pthis->m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
+              pthis->m_alias_tables.async_visit(next_vertex, async_bias_walk_step(), walk_length, l, pthis);
             }
         } else {
           pthis->m_local_paths_finished++;
         }    
-      */
       }
     };
 

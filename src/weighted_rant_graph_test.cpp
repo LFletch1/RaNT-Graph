@@ -23,8 +23,8 @@ int main(int argc, char** argv) {
     // std::string filename = "/p/lustre2/havoqgtu/trevor_twitter";
     world.welcome();
 
-    RaNT_Graph<uint32_t, ygm_rng, std::tuple<uint32_t,uint32_t,double>> weighted_rant_graph(world, world.size(), rng, true);
-    RaNT_Graph<uint32_t, ygm_rng> rant_graph(world, world.size(), rng, false, true);
+    RaNT_Graph<uint32_t,std::tuple<uint32_t,uint32_t,double>> weighted_rant_graph(world, world.size(), rng, true);
+    // RaNT_Graph<uint32_t> rant_graph(world, world.size(), rng, false, true);
 
     world.cout0("Reading graph edges into both a weighted and unweighted RaNT-Graph");
     ygm::io::line_parser file_reader(world, {filename});
@@ -33,45 +33,44 @@ int main(int argc, char** argv) {
       std::stringstream str_stream(line);
       str_stream >> u;
       str_stream >> v;
-      // weighted_rant_graph.insert_edge_locally(std::make_tuple(u, v, 1.0));
-      rant_graph.insert_edge_locally(std::make_pair(u, v));
+      weighted_rant_graph.insert_edge_locally(std::make_tuple(u, v, 1.0));
+      // rant_graph.insert_edge_locally(std::make_pair(u, v));
     }); 
 
     world.barrier();
     
-    // world.cout0("Constructing weighted RaNT-Graph");
-    // weighted_rant_graph.construct_graph();
+    world.cout0("Constructing weighted RaNT-Graph");
+    weighted_rant_graph.construct_graph();
 
-    world.cout0("Constructing unweighted RaNT-Graph");
-    rant_graph.construct_graph();
+    // world.cout0("Constructing unweighted RaNT-Graph");
+    // rant_graph.construct_graph();
 
-    world.barrier();
+    // world.barrier();
 
-    timer.reset();
-    world.barrier();
+    // timer.reset();
+    // world.barrier();
 
-    world.cout0("Number of vertices unweighted graph: ", rant_graph.num_vertices()); 
+    // world.cout0("Number of vertices unweighted graph: ", rant_graph.num_vertices()); 
     world.cout0("Number of vertices weighted graph: ", weighted_rant_graph.num_vertices()); 
-    world.cout0("Taking walks on RaNT-Graph");
+    world.cout0("Taking walks on weighted RaNT-Graph");
 
     world.barrier();
 
-    timer.reset();
+    // timer.reset();
     uint32_t n_walks = 1000000;
     uint32_t walk_length = 50;
-    rant_graph.take_n_walks(n_walks, walk_length);
-    // rant_graph.take_n_paths(n_walks, 50);
+    // weighted_rant_graph.take_n_walks(n_walks, walk_length);
 
-    world.barrier();
+    // world.barrier();
 
-    world.cout0("Total time to take ", n_walks, " walks of target length ",  walk_length, ": ", timer.elapsed(), " seconds.");
+    // world.cout0("Total time to take ", n_walks, " walks of target length ",  walk_length, ": ", timer.elapsed(), " seconds.");
 
-    ASSERT_RELEASE(rant_graph.paths_finished() == n_walks);
+    // ASSERT_RELEASE(weighted_rant_graph.paths_finished() == n_walks);
     
-    uint64_t expected_total_steps = n_walks * walk_length;
-    uint64_t actual_steps = rant_graph.m_cs.count_all();
+    // uint64_t expected_total_steps = n_walks * walk_length;
+    // uint64_t actual_steps = weighted_rant_graph.m_cs.count_all();
 
-    world.cout0("Average walk length: ", (double) actual_steps / (double) n_walks);
+    // world.cout0("Average walk length: ", (double) actual_steps / (double) n_walks);
     // rant_graph.m_cs.for_all([&](uint32_t v, uint32_t count){
     //   world.cout("Vertex: ", v, ", Visit Count: ", count);
     // });
