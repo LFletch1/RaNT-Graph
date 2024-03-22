@@ -92,14 +92,16 @@ class RaNT_Graph {
         auto ptr_v_degrees = m_comm.make_ygm_ptr(vertex_degrees);
         m_comm.barrier(); // Ensure ygm_ptr created on every rank
         for (Edge e : m_local_edges) {
-          local_vertex_degrees[std::get<0>(e)]++; 
-          if (!m_directed) {
-            local_vertex_degrees[std::get<1>(e)]++; // For now assume graph is undirected;
+          if (std::get<0>(e) != std::get<1>(e)) { // Not currently supporting self edges, probably could
+            local_vertex_degrees[std::get<0>(e)]++; 
+            if (!m_directed) {
+              local_vertex_degrees[std::get<1>(e)]++;
+            }
           }
         }      
         auto add_to_degree = [](VertexID v, degree_t amount, auto ptr_vertex_degrees){
           if (ptr_vertex_degrees->find(v) != ptr_vertex_degrees->end()) {
-            ptr_vertex_degrees->at(v) += amount;
+            ptr_vertex_degrees->at(v) = ptr_vertex_degrees->at(v) + amount;
           } else {
             (*ptr_vertex_degrees)[v] = amount;
           }
@@ -112,6 +114,7 @@ class RaNT_Graph {
         using vrtx_deg_vec = std::vector<std::pair<VertexID,degree_t>>;
         vrtx_deg_vec my_delegated_vertex_degrees;
         for (const auto & [v, degree] : vertex_degrees) {
+          ASSERT_RELEASE(owner(v) == m_comm.rank());
           if (degree >= m_delegation_threshold) {
             my_delegated_vertex_degrees.push_back(std::make_pair(v,degree));
           }
@@ -122,9 +125,7 @@ class RaNT_Graph {
             std::set_union(a.cbegin(), a.cend(), b.cbegin(), b.cend(), std::back_inserter(res));
             return res;
         };
-
         vrtx_deg_vec all_delegated_vertex_degrees = m_comm.all_reduce(my_delegated_vertex_degrees, merge_func); 
-
         m_delegated_vertex_degrees.insert(all_delegated_vertex_degrees.begin(), all_delegated_vertex_degrees.end());
       }
 
@@ -138,7 +139,6 @@ class RaNT_Graph {
           adj_list.push_back(new_adj_list[0]);
         };
 
-        m_comm.cout0("Here 1");
         for (auto& edge : m_local_edges) {
           VertexID v1 = std::get<0>(edge);
           VertexID v2 = std::get<1>(edge);
@@ -160,30 +160,22 @@ class RaNT_Graph {
             }
           }
         }
-        m_comm.cout0("Here 2");
         {
           std::vector<Edge> empty_vec;
           std::swap(empty_vec, m_local_edges); // Free the memory of m_local_edges
         }
-        m_comm.cout0("Here 3");
         build_local_alias_tables();
-        m_comm.cout0("Here 4");
         m_delegated_alias_tables.balance_weight();
-        m_comm.cout0("Here 5");
         m_delegated_alias_tables.build_alias_tables();
-        m_comm.cout0("Here 6");
-
         m_weighted_adj_lists.for_all([&](const auto& vertex, const auto& adj_list){
           pthis->m_local_vertices.push_back(vertex);
         });
-        m_comm.cout0("Here 7");
-
+        m_weighted_adj_lists.clear();
         for (const auto & [vertex, deg] : m_delegated_vertex_degrees) {
           if (owner(vertex) == m_comm.rank()) {
             m_local_vertices.push_back(vertex); 
           }
         }
-        m_comm.cout0("Here 8");
 
       } else {
         // For now, use inefficient method of first distributing every edges via a 1D partitioning then having 
@@ -191,17 +183,17 @@ class RaNT_Graph {
         // to that of how the multi_alias tables are built
         // ygm::ygm_ptr local_scope_pthis = pthis;
         for (auto& edge : m_local_edges) {
-          VertexID v1 = std::get<0>(edge);
-          VertexID v2 = std::get<1>(edge);
-          if (v1 != v2) {
+          VertexID src = std::get<0>(edge);
+          VertexID dst = std::get<1>(edge);
+          if (src != dst) { // Not currently supporting self edges, probably could
             auto add_to_adjacency_list = [](const auto& key, auto& adj_list, const auto& new_adj_list) {
               adj_list.push_back(new_adj_list[0]);
             };
-            std::vector<VertexID> adj_list_1 = {v2};
-            m_adj_lists.async_insert_if_missing_else_visit(v1, adj_list_1, add_to_adjacency_list);
+            std::vector<VertexID> src_adj_list = {dst};
+            m_adj_lists.async_insert_if_missing_else_visit(src, src_adj_list, add_to_adjacency_list);
             if (!m_directed) {
-              std::vector<VertexID> adj_list_2 = {v1};
-              m_adj_lists.async_insert_if_missing_else_visit(v2, adj_list_2, add_to_adjacency_list); 
+              std::vector<VertexID> dst_adj_list = {src};
+              m_adj_lists.async_insert_if_missing_else_visit(dst, dst_adj_list, add_to_adjacency_list); 
             }
           }
         }
@@ -210,22 +202,31 @@ class RaNT_Graph {
           std::vector<Edge> empty_vec;
           std::swap(empty_vec, m_local_edges); // Free the memory of m_local_edges
         }
-
         // Remove duplicates from adjacency lists
-        m_adj_lists.for_all([](const auto& v, auto& adj_list) {
-          std::sort( adj_list.begin(), adj_list.end() );
-          adj_list.erase(std::unique( adj_list.begin(), adj_list.end() ), adj_list.end() );
-        });
-
+        // m_adj_lists.for_all([&](const auto& v, auto& adj_list) {
+        //   size_t old_s = adj_list.size();
+        //   std::sort( adj_list.begin(), adj_list.end() );
+        //   adj_list.erase(std::unique( adj_list.begin(), adj_list.end() ), adj_list.end() );
+        //   size_t new_s = adj_list.size();
+        //   if (old_s != new_s) {
+        //     m_comm.cout("Old: ", old_s, ", New: ", new_s);
+        //   }
+        // });
+        // Sanity Check
+        // m_adj_lists.for_all([&](const auto& v, auto& adj_list) {
+        //   ASSERT_RELEASE(adj_list.size() == m_delegated_vertex_degrees[v]);
+        // });
+        
         for (auto &v_degree : m_delegated_vertex_degrees) {
           VertexID v = v_degree.first;
 
           auto delegate = [](const auto& v, auto& adj_list, self_ygm_ptr_type pthis) {
+            ASSERT_RELEASE(adj_list.size() == pthis->m_delegated_vertex_degrees[v]);
 
             auto delegator = [](VertexID v, std::vector<VertexID> delegated_adj_list, uint64_t degree, self_ygm_ptr_type pthis) {
               pthis->m_local_delegated_adj_lists.insert({v, delegated_adj_list});
-              // pthis->m_delegated_vertex_degrees.insert({v, degree});
             };
+
             int total = 0;
             for (int r = 0; r < pthis->m_comm.size(); r++) {
               std::vector<VertexID> part_of_adj;
@@ -238,8 +239,9 @@ class RaNT_Graph {
             ASSERT_RELEASE(total == adj_list.size());
           };
 
-
-          m_adj_lists.async_visit(v, delegate, pthis);
+          if (owner(v) == m_comm.rank()) {
+            m_adj_lists.async_visit(v, delegate, pthis);
+          }
         }
         m_comm.barrier();
 
@@ -368,12 +370,13 @@ class RaNT_Graph {
         if (m_delegated_vertex_degrees.find(v) != m_delegated_vertex_degrees.end()) {
           m_delegated_alias_tables.async_sample(v, async_bias_delegated_walk_step(), 0, target_walk_length, pthis);
         } else {
-
+          // DONT FORGET HERE
         }
       } else {
         if (m_delegated_vertex_degrees.find(v) != m_delegated_vertex_degrees.end()) {
           std::uniform_int_distribution<VertexID> dis(0, m_delegated_vertex_degrees.at(v)-1);
           uint32_t global_idx = dis(m_rng);
+          // m_comm.cout0("Global_idx: ", global_idx);
           m_comm.async(owner(global_idx), 
                       async_delegated_walk_step(), 
                       v, 
@@ -652,6 +655,10 @@ class RaNT_Graph {
         pthis->m_cs.async_insert(vertex);
         walk_length++;
         if (walk_length < l) { 
+          // pthis->m_comm.cout0("HERE2, vertex: ", vertex);
+          // pthis->m_comm.cout0("HERE2, del_adj_list size: ", pthis->m_local_delegated_adj_lists.size());
+          // pthis->m_comm.cout0("HERE2, del_adj_list_size[vertex] size: ", pthis->m_local_delegated_adj_lists.at(vertex).size(), ", local_idx: ", local_idx);
+
           VertexID next_vertex = pthis->m_local_delegated_adj_lists.at(vertex).at(local_idx); 
           if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
             std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);

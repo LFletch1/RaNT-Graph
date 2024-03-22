@@ -20,27 +20,27 @@ int main(int argc, char** argv) {
     // std::string filename = "/g/g20/lancef/graphs/facebook_combined.txt";
     // std::string filename = "/g/g20/lancef/graphs/karate_club.txt";
     std::string filename = "/p/lustre2/havoqgtu/LiveJournal/edge.txt";
+    // std::string filename = "/p/lustre2/havoqgtu/trevor_twitter";
     world.welcome();
 
     RaNT_Graph<uint32_t, ygm_rng, std::tuple<uint32_t,uint32_t,double>> weighted_rant_graph(world, world.size(), rng, true);
-    RaNT_Graph<uint32_t, ygm_rng> rant_graph(world, world.size(), rng);
+    RaNT_Graph<uint32_t, ygm_rng> rant_graph(world, world.size(), rng, false, true);
 
     world.cout0("Reading graph edges into both a weighted and unweighted RaNT-Graph");
     ygm::io::line_parser file_reader(world, {filename});
     file_reader.for_all([&](const std::string& line) {
-      uint32_t v1, v2;
+      uint32_t u, v;
       std::stringstream str_stream(line);
-      str_stream >> v1;
-      str_stream >> v2;
-    //   graph_edges.async_insert(std::make_pair(v1, v2));
-      weighted_rant_graph.insert_edge_locally(std::make_tuple(v1, v2, 1.0));
-      rant_graph.insert_edge_locally(std::make_pair(v1, v2));
+      str_stream >> u;
+      str_stream >> v;
+      // weighted_rant_graph.insert_edge_locally(std::make_tuple(u, v, 1.0));
+      rant_graph.insert_edge_locally(std::make_pair(u, v));
     }); 
 
     world.barrier();
     
-    world.cout0("Constructing weighted RaNT-Graph");
-    weighted_rant_graph.construct_graph();
+    // world.cout0("Constructing weighted RaNT-Graph");
+    // weighted_rant_graph.construct_graph();
 
     world.cout0("Constructing unweighted RaNT-Graph");
     rant_graph.construct_graph();
@@ -50,7 +50,8 @@ int main(int argc, char** argv) {
     timer.reset();
     world.barrier();
 
-    world.cout0("Number of vertices: ", rant_graph.num_vertices()); 
+    world.cout0("Number of vertices unweighted graph: ", rant_graph.num_vertices()); 
+    world.cout0("Number of vertices weighted graph: ", weighted_rant_graph.num_vertices()); 
     world.cout0("Taking walks on RaNT-Graph");
 
     world.barrier();
