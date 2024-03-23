@@ -305,7 +305,7 @@ class multi_alias_table {
                 std::uniform_int_distribution<uint64_t> table_item_dist(0, ptr_MAT->m_local_alias_tables[t_id].size()-1);
                 table_item tbl_itm = ptr_MAT->m_local_alias_tables[t_id][table_item_dist(ptr_MAT->m_rng)];
                 item_id_type s;
-                if (tbl_itm.p = 1) {
+                if (tbl_itm.p == 1) {
                     s = tbl_itm.a;
                 } else {
                     std::uniform_real_distribution<float> zero_one_dist(0.0, 1.0);

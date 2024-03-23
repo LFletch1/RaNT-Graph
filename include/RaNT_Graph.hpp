@@ -5,37 +5,46 @@
 #include <ygm/random.hpp>
 #include <random>
 #include <tuple>
-#include <RMAT_generator/helpers.hpp>
+#include <helpers.hpp>
 #include <ygm/io/line_parser.hpp>
 #include <unordered_map>
 #include <ygm/detail/ygm_ptr.hpp>
 #include <multi_alias_table.hpp>
+#include <type_traits>
 #include <mpi.h>
 
 // template <typename VertexID, typename RNG>
-template <typename VertexID, typename Edge = std::pair<VertexID, VertexID>>
+// template <typename VertexID, typename Edge = std::pair<VertexID, VertexID>>
+template <typename VertexID, typename weight_t = void>
 class RaNT_Graph {
 
   using RNG                = ygm::default_random_engine<>;
-  using self_type          = RaNT_Graph<VertexID, Edge>;
+  using self_type          = RaNT_Graph<VertexID, weight_t>;
   using self_ygm_ptr_type  = ygm::ygm_ptr<self_type>;
   // using MAT                = multi_alias_table<VertexID, VertexID, double, RNG>;
 
   private:
 
-    struct alias_table_item { 
-        double p; // prob item a is selected = p, prob item b is selected = (1 - p)
-        VertexID a;
-        VertexID b;
+    // struct alias_table_item { 
+    //     double p; // prob item a is selected = p, prob item b is selected = (1 - p)
+    //     VertexID a;
+    //     VertexID b;
 
-        template <typename Archive>
-        void serialize(Archive& ar) { // Needed for cereal serialization
-            ar(p, a, b);
-        }
-    };
+    //     template <typename Archive>
+    //     void serialize(Archive& ar) { // Needed for cereal serialization
+    //         ar(p, a, b);
+    //     }
+    // };
 
-    // using alias_table_item = std::tuple<double, VertexID, VertexID>;
+    using alias_table_item = std::tuple<double, VertexID, VertexID>;
 
+    // using Edge = typename std::conditional<std::is_void<weight>::value, int, double>::type;
+    // using Edge = typename std::conditional<weight, int, double>::type;
+
+    // using Edge = typename std::conditional<weight, std::pair<VertexID,VertexID>, std::tuple<VertexID,VertexID,double> >::type;
+    using Edge = typename std::conditional<std::is_void<weight_t>::value, std::pair<VertexID,VertexID>, std::tuple<VertexID,VertexID,double> >::type;
+
+    // using Edge = std::pair<VertexID, VertexID>;
 
     ygm::comm&                                            m_comm;
     self_ygm_ptr_type                                     pthis;
@@ -85,7 +94,8 @@ class RaNT_Graph {
     void insert_edge_locally(Edge e) {
       m_local_edges.push_back(e);
     }
-
+    
+    
     void construct_graph() {
       {
         using degree_t = VertexID; // Degree of vertex is upperbounded by num of vertices in graph;
@@ -335,6 +345,8 @@ class RaNT_Graph {
       m_comm.barrier();
     }
 
+    /*
+
     void start_path(VertexID v, uint32_t l) { 
 
       std::set<VertexID> path{}; // First vertex will be added to path at beginning of called functor
@@ -365,6 +377,7 @@ class RaNT_Graph {
 
       m_comm.barrier();
     }
+    */
 
 
     void start_walk(VertexID v, uint32_t target_walk_length) {
@@ -401,6 +414,7 @@ class RaNT_Graph {
 
       m_comm.barrier();
     }
+
 
     uint64_t paths_finished() {
       m_comm.barrier();
@@ -617,6 +631,7 @@ class RaNT_Graph {
     };
     */
 
+
     struct async_walk_step {            
       
       void operator()(VertexID vertex,
@@ -679,31 +694,30 @@ class RaNT_Graph {
     };
 
     
-    VertexID bias_sample_edge(VertexID v) {
+    VertexID bias_sample_edge(std::vector<alias_table_item>& alias_table) {
       // Sample outgoing edge of v. Should be called by process which owns v via 1D partitioned
-      // ygm::container::map<VertexID, std::vector<alias_table_item>>  m_alias_tables;
-      alias_table_item itm = select_randomly_from_vec(m_alias_tables[v].begin(), m_alias_tables[v].end(), m_rng); 
-      // std::uniform_real_distribution<double> zero_one_dist(0.0, 1.0);
-      // double coin_flip = zero_one_dist(ptr_MAT->m_rng);
+      alias_table_item itm = select_randomly_from_vec(alias_table.begin(), alias_table.end(), m_rng); 
       VertexID s;
-      if (itm.p = 1) {
-          s = itm.a;
+      if (std::get<0>(itm) == 1) {
+          s = std::get<1>(itm);
       } else {
           std::uniform_real_distribution<double> zero_one_dist(0.0, 1.0);
           double d = zero_one_dist(m_rng);
-          if (d < itm.p) {
-              s = itm.a;
+          if (d < std::get<0>(itm)) {
+              s = std::get<1>(itm);
+              // s = itm.a;
           } else {
-              s = itm.b;
+              s = std::get<2>(itm);
+              // s = itm.b;
           }
       }
       return s;
     }
  
     struct async_bias_delegated_walk_step {            
-      /* next_vertex is the vertex sampled from curr_vertex distributed alias table */
-      /* No single process owns curr_vertex, every vertex owns an equal portion of curr_vertex's */
-      /* alias table thus the processor running this is code is randomly chosen. */
+      //  next_vertex is the vertex sampled from curr_vertex distributed alias table 
+      //  No single process owns curr_vertex, every vertex owns an equal portion of curr_vertex's 
+      //  alias table thus the processor running this is code is randomly chosen. 
       void operator()(VertexID next_vertex,
                       VertexID curr_vertex,
                       uint32_t walk_length,
@@ -716,7 +730,6 @@ class RaNT_Graph {
           if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
             pthis->m_delegated_alias_tables.async_sample(next_vertex, 
                                                          async_bias_delegated_walk_step(),
-                                                         next_vertex,
                                                          walk_length,
                                                          l,
                                                          pthis);
@@ -730,7 +743,7 @@ class RaNT_Graph {
     };
 
     struct async_bias_walk_step {            
-      /* This functor is called by the process which owns the vertex argument. Vertex should not be delegated. */
+      // This functor is called by the process which owns the vertex argument. Vertex should not be delegated. 
       void operator()(VertexID vertex,
                         std::vector<alias_table_item> alias_table,
                         uint32_t walk_length, uint32_t l, self_ygm_ptr_type pthis) {
@@ -739,11 +752,10 @@ class RaNT_Graph {
         pthis->m_cs.async_insert(vertex); 
         walk_length++;
         if (walk_length < l && alias_table.size() > 0) {
-            VertexID next_vertex = pthis->bias_sample_edge(vertex);
+            VertexID next_vertex = pthis->bias_sample_edge(alias_table);
             if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
               pthis->m_delegated_alias_tables.async_sample(next_vertex, 
                                                            async_bias_delegated_walk_step(),
-                                                           next_vertex,
                                                            walk_length,
                                                            l,
                                                            pthis);

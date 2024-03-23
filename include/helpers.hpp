@@ -100,7 +100,7 @@ Params parse_args(int argc, char *argv[], ygm::comm &comm) {
 
 
 template<typename Iter, typename RNG>
-uint64_t select_randomly_from_vec(Iter start, Iter end, RNG &rng) {
+auto select_randomly_from_vec(Iter start, Iter end, RNG &rng) {
     std::uniform_int_distribution<> dis(0, std::distance(start, end) - 1);
     std::advance(start, dis(rng));
     return *start;
