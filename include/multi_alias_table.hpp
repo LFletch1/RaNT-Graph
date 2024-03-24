@@ -62,6 +62,7 @@ class multi_alias_table {
         void local_add_item (std::tuple<table_id_type, item_id_type, weight_type> i) {
             item itm({std::get<0>(i), std::get<1>(i), std::get<2>(i)});
             m_local_items[itm.t_id].push_back(itm);
+            m_each_tables_local_weight[itm.t_id] += itm.weight; 
         }
 
         // For debugging
@@ -110,7 +111,6 @@ class multi_alias_table {
             std::vector<double> global_table_w8s(table_ids.size()); // Global total weight for each table
             MPI_Allreduce(local_weights_vec.data(), global_table_w8s.data(), local_weights_vec.size(), MPI_DOUBLE, MPI_SUM, comm);
             m_comm.barrier();
-            // m_comm.cout0("Completed collective communications in balance()");
 
             ASSERT_RELEASE(ygm::is_same(table_ids.size(), m_comm));
             ASSERT_RELEASE(ygm::is_same(w8s_prfx_sum.size(), m_comm));
@@ -207,7 +207,7 @@ class multi_alias_table {
             std::vector<double> w8_vec;
             for (const auto& w : m_each_tables_local_weight) {
                 w8_vec.push_back(w.second); 
-            } 
+            }  
 
             m_comm.barrier();
 
@@ -298,12 +298,14 @@ class multi_alias_table {
 
         template <typename Visitor, typename... VisitorArgs>
         void async_sample(table_id_type table_id, Visitor visitor, const VisitorArgs &...args) { // Sample should be provided a function with takes as an argument the item type 
-
             ASSERT_RELEASE(m_tables_built);
 
             auto visit_wrapper = [](auto ptr_MAT, table_id_type t_id, const VisitorArgs &...args) {
-                std::uniform_int_distribution<uint64_t> table_item_dist(0, ptr_MAT->m_local_alias_tables[t_id].size()-1);
-                table_item tbl_itm = ptr_MAT->m_local_alias_tables[t_id][table_item_dist(ptr_MAT->m_rng)];
+                // std::uniform_int_distribution<uint64_t> table_item_dist(0, ptr_MAT->m_local_alias_tables[t_id].size()-1);
+                std::uniform_int_distribution<uint64_t> table_item_dist(0, ptr_MAT->m_local_alias_tables.at(t_id).size()-1); // This is problem
+                // table_item tbl_itm = ptr_MAT->m_local_alias_tables[t_id][table_item_dist(ptr_MAT->m_rng)];
+                auto tmp = ptr_MAT->m_local_alias_tables.at(t_id);
+                table_item tbl_itm = ptr_MAT->m_local_alias_tables.at(t_id).at(table_item_dist(ptr_MAT->m_rng));
                 item_id_type s;
                 if (tbl_itm.p == 1) {
                     s = tbl_itm.a;
@@ -319,7 +321,7 @@ class multi_alias_table {
                 Visitor *vis = nullptr;
                 ygm::meta::apply_optional(*vis, std::make_tuple(ptr_MAT), std::forward_as_tuple(s, t_id, args...));
             };
-
+            
             uint32_t dest_rank = m_rank_dist(m_rng);
             m_comm.async(dest_rank, visit_wrapper, pthis, table_id, std::forward<const VisitorArgs>(args)...);
         }        
