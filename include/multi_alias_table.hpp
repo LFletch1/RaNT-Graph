@@ -304,7 +304,6 @@ class multi_alias_table {
                 // std::uniform_int_distribution<uint64_t> table_item_dist(0, ptr_MAT->m_local_alias_tables[t_id].size()-1);
                 std::uniform_int_distribution<uint64_t> table_item_dist(0, ptr_MAT->m_local_alias_tables.at(t_id).size()-1); // This is problem
                 // table_item tbl_itm = ptr_MAT->m_local_alias_tables[t_id][table_item_dist(ptr_MAT->m_rng)];
-                auto tmp = ptr_MAT->m_local_alias_tables.at(t_id);
                 table_item tbl_itm = ptr_MAT->m_local_alias_tables.at(t_id).at(table_item_dist(ptr_MAT->m_rng));
                 item_id_type s;
                 if (tbl_itm.p == 1) {

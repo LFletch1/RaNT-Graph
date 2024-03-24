@@ -20,12 +20,13 @@ int main(int argc, char** argv) {
     // std::string filename = "/g/g20/lancef/graphs/karate_club.txt";
     // std::string filename = "/p/lustre2/havoqgtu/LiveJournal/edge.txt";
     std::string filename = "/p/lustre2/havoqgtu/trevor_twitter";
+    // std::string filename = "/p/lustre2/havoqgtu/lance/uk-2007-05_graph.txt";
     world.welcome();
 
     // RaNT_Graph<uint32_t,double> weighted_rant_graph(world, world.size(), rng, true);
     RaNT_Graph<uint32_t> rant_graph(world, world.size(), rng);
 
-    world.cout0("Reading graph edges into both a weighted and unweighted RaNT-Graph");
+    world.cout0("Reading graph edges into RaNT-Graph");
     ygm::io::line_parser file_reader(world, {filename});
     file_reader.for_all([&](const std::string& line) {
       uint32_t u, v;
@@ -50,10 +51,11 @@ int main(int argc, char** argv) {
 
     world.barrier();
 
-    uint32_t n_walks = 100000000;
-    uint32_t walk_length = 50;
+    // uint32_t n_walks = 134000000;
+    uint32_t n_walks = 41700000;
+    uint32_t walk_length = 80;
 
-    world.cout0("Taking walks on weighted RaNT-Graph");
+    world.cout0("Taking walks on RaNT-Graph");
     timer.reset();
     rant_graph.take_n_walks(n_walks, walk_length);
     // weighted_rant_graph.take_n_walks(n_walks, walk_length);

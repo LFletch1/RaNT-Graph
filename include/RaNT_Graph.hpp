@@ -623,7 +623,7 @@ class RaNT_Graph {
         // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
         // pthis->m_comm.cout("At vertex ", vertex);
-        pthis->m_cs.async_insert(vertex);
+        // pthis->m_cs.async_insert(vertex);
         walk_length++;
         if (walk_length < l && adj_list.size() > 0) {
             VertexID next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
@@ -655,7 +655,7 @@ class RaNT_Graph {
         // pthis->m_comm.cout("Made it inside delegated step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
         // pthis->m_comm.cout("At delegated vertex ", vertex);
-        pthis->m_cs.async_insert(vertex);
+        // pthis->m_cs.async_insert(vertex);
         walk_length++;
         if (walk_length < l) { 
           VertexID next_vertex = pthis->m_local_delegated_adj_lists.at(vertex).at(local_idx); 
