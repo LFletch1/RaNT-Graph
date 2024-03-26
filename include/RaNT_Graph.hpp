@@ -40,6 +40,7 @@ class RaNT_Graph {
     std::unordered_map<vertex_t, vertex_t>                m_delegated_vertex_degrees;
     std::vector<vertex_t>                                 m_local_vertices;
     uint64_t                                              m_local_paths_finished;
+    uint64_t                                              m_shortcuts_taken;
 
     // Class variables used if graph is unweighted
     ygm::container::map<vertex_t, std::vector<vertex_t>>  m_adj_lists;
@@ -62,6 +63,7 @@ class RaNT_Graph {
                   m_alias_tables(comm),
                   m_cs(comm),
                   m_local_paths_finished(0),
+                  m_shortcuts_taken(0),
                   m_rng(rng),
                   m_weighted(weighted),
                   m_directed(directed),
@@ -410,6 +412,11 @@ class RaNT_Graph {
       return ygm::sum(m_local_paths_finished, m_comm);
     }
 
+    uint64_t shortcuts_taken() {
+      m_comm.barrier();
+      return ygm::sum(m_shortcuts_taken, m_comm);
+    }
+
     size_t num_vertices() {
       // Correct if delegation threshold > comm.size(). If not then only will be correct for rank 0.
       m_comm.barrier();
@@ -630,23 +637,36 @@ class RaNT_Graph {
         // path.insert(vertex);
         // pthis->m_comm.cout("At vertex ", vertex);
         // pthis->m_cs.async_insert(vertex);
+        auto& rg = *pthis;
         walk_length++;
         if (walk_length < l && adj_list.size() > 0) {
-            vertex_t next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
+            vertex_t next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), rg.m_rng);
             // if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
-            if (pthis->m_delegated_vertex_degrees.find(next_vertex) != pthis->m_delegated_vertex_degrees.end()) {
-              std::uniform_int_distribution<vertex_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
-              ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(next_vertex) > 0);
-              vertex_t global_idx = dis(pthis->m_rng);
-              pthis->m_comm.async(pthis->owner(global_idx),
-                                  async_delegated_walk_step(),
-                                  next_vertex,
-                                  pthis->local_idx(global_idx), walk_length, l, pthis);
+            if (rg.m_delegated_vertex_degrees.find(next_vertex) != rg.m_delegated_vertex_degrees.end()) {
+              std::uniform_int_distribution<vertex_t> dis(0, rg.m_delegated_vertex_degrees.at(next_vertex)-1);
+              ASSERT_RELEASE(rg.m_delegated_vertex_degrees.at(next_vertex) > 0);
+              vertex_t global_idx = dis(rg.m_rng);
+              uint32_t dst = rg.owner(global_idx);
+              if (dst == rg.m_comm.rank()) {
+                rg.m_shortcuts_taken++;
+                async_delegated_walk_step()(next_vertex, rg.local_idx(global_idx), walk_length, l, pthis);
+              } else {
+                rg.m_comm.async(rg.owner(global_idx),
+                                    async_delegated_walk_step(),
+                                    next_vertex,
+                                    rg.local_idx(global_idx), walk_length, l, pthis);
+              }
             } else {
-              pthis->m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
+              if (rg.m_adj_lists.owner(next_vertex) == rg.m_comm.rank()) {
+                rg.m_shortcuts_taken++;
+                auto aws = async_walk_step();
+                rg.m_adj_lists.local_visit(next_vertex, aws, walk_length, l, pthis);
+              } else {
+                rg.m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
+              }
             }
         } else {
-          pthis->m_local_paths_finished++;
+          rg.m_local_paths_finished++;
         }    
       }
     };
@@ -662,24 +682,37 @@ class RaNT_Graph {
         // path.insert(vertex);
         // pthis->m_comm.cout("At delegated vertex ", vertex);
         // pthis->m_cs.async_insert(vertex);
+        auto& rg = *pthis;
         walk_length++;
-        if (walk_length < l) { 
-          vertex_t next_vertex = pthis->m_local_delegated_adj_lists.at(vertex).at(local_idx); 
+        if (walk_length < l) {   
+          vertex_t next_vertex = rg.m_local_delegated_adj_lists.at(vertex).at(local_idx); 
           // if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
-          if (pthis->m_delegated_vertex_degrees.find(next_vertex) != pthis->m_delegated_vertex_degrees.end()) {
-            std::uniform_int_distribution<vertex_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
-            ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(next_vertex) > 0);
-            vertex_t global_idx = dis(pthis->m_rng);
-
-            pthis->m_comm.async(pthis->owner(global_idx),
-                                async_delegated_walk_step(), 
-                                next_vertex, 
-                                pthis->local_idx(global_idx), walk_length, l, pthis);
+          if (rg.m_delegated_vertex_degrees.find(next_vertex) != rg.m_delegated_vertex_degrees.end()) {
+            std::uniform_int_distribution<vertex_t> dis(0, rg.m_delegated_vertex_degrees.at(next_vertex)-1);
+            ASSERT_RELEASE(rg.m_delegated_vertex_degrees.at(next_vertex) > 0);
+            vertex_t global_idx = dis(rg.m_rng);
+            uint32_t dst = rg.owner(global_idx);
+            if (dst == rg.m_comm.rank()) {
+              rg.m_shortcuts_taken++;
+              async_delegated_walk_step()(next_vertex, rg.local_idx(global_idx), walk_length, l, pthis);
+            } else {
+              rg.m_comm.async(rg.owner(global_idx),
+                              async_delegated_walk_step(), 
+                              next_vertex, 
+                              rg.local_idx(global_idx), walk_length, l, pthis);
+            }
           } else {
-            pthis->m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
+            if (rg.m_adj_lists.owner(next_vertex) == rg.m_comm.rank()) {
+              rg.m_shortcuts_taken++;
+              auto aws = async_walk_step();
+              rg.m_adj_lists.local_visit(next_vertex, aws, walk_length, l, pthis);
+            } else {
+              rg.m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
+            }
+            // rg.m_adj_lists.async_visit(next_vertex, async_walk_step(), walk_length, l, pthis);
           }
         } else {
-          pthis->m_local_paths_finished++;
+          rg.m_local_paths_finished++;
         }    
       }
     };

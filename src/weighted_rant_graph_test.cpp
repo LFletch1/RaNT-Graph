@@ -54,6 +54,7 @@ int main(int argc, char** argv) {
     // uint32_t n_walks = 134000000;
     uint32_t n_walks = 105000000;
     // uint32_t n_walks = 41700000;
+    // uint32_t n_walks = 100000;
     uint32_t walk_length = 80;
 
     world.cout0("Taking walks on RaNT-Graph");
@@ -67,6 +68,8 @@ int main(int argc, char** argv) {
     // ASSERT_RELEASE(weighted_rant_graph.paths_finished() == n_walks);
 
     world.barrier();
+    uint64_t st = rant_graph.shortcuts_taken();
+    world.cout0("Shortcuts Taken: ", st);
  
     uint64_t expected_total_steps = n_walks * walk_length;
     // uint64_t actual_steps = weighted_rant_graph.m_cs.count_all();
