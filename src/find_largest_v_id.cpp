@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
     // std::string filename = "/p/lustre2/havoqgtu/trevor_twitter";
     // std::string filename = "/p/lustre2/havoqgtu/trevor_uk-2007-05";
     // std::string filename = "/p/lustre2/havoqgtu/lance/uk-2007-05_graph.txt";
-    std::string filename = "/p/lustre2/havoqgtu/lance/WDC12_unweighted_rnd_ids.edgelist";
+    // std::string filename = "/p/lustre2/havoqgtu/lance/WDC12_unweighted_rnd_ids.edgelist";
 
     world.cout0("Reading graph edges into bag");
     ygm::io::line_parser file_reader(world, {filename});

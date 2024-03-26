@@ -13,17 +13,20 @@
 #include <type_traits>
 #include <mpi.h>
 
-template <typename VertexID, typename weight_t = void>
+#pragma once
+
+template <typename vertex_t, typename weight_t = void>
 class RaNT_Graph {
 
   using RNG                = ygm::default_random_engine<>;
-  using self_type          = RaNT_Graph<VertexID, weight_t>;
+  using self_type          = RaNT_Graph<vertex_t, weight_t>;
   using self_ygm_ptr_type  = ygm::ygm_ptr<self_type>;
 
   private:
 
-    using alias_table_item = std::tuple<double, VertexID, VertexID>;
-    using Edge = typename std::conditional<std::is_void<weight_t>::value, std::pair<VertexID,VertexID>, std::tuple<VertexID,VertexID,double> >::type;
+    using alias_table_item = std::tuple<double, vertex_t, vertex_t>;
+    using Edge = typename std::conditional<std::is_void<weight_t>::value, std::pair<vertex_t,vertex_t>, std::tuple<vertex_t,vertex_t,double> >::type;
+
 
 
     ygm::comm&                                            m_comm;
@@ -34,23 +37,23 @@ class RaNT_Graph {
     std::vector<Edge>                                     m_local_edges;
     uint32_t                                              m_delegation_threshold;
     uint32_t                                              m_rejection_threshold;  // Parameter for path sampling
-    std::unordered_map<VertexID, uint64_t>                m_delegated_vertex_degrees;
-    std::vector<VertexID>                                 m_local_vertices;
+    std::unordered_map<vertex_t, vertex_t>                m_delegated_vertex_degrees;
+    std::vector<vertex_t>                                 m_local_vertices;
     uint64_t                                              m_local_paths_finished;
 
     // Class variables used if graph is unweighted
-    ygm::container::map<VertexID, std::vector<VertexID>>  m_adj_lists;
-    std::unordered_map<VertexID, std::vector<VertexID>>   m_local_delegated_adj_lists;
+    ygm::container::map<vertex_t, std::vector<vertex_t>>  m_adj_lists;
+    std::unordered_map<vertex_t, std::vector<vertex_t>>   m_local_delegated_adj_lists;
 
     // Class variables used if graph is weighted
-    using weighted_edge = std::pair<VertexID, double>;
-    ygm::container::map<VertexID, std::vector<weighted_edge>>     m_weighted_adj_lists;
-    multi_alias_table<VertexID, VertexID, double, RNG>            m_delegated_alias_tables;
-    ygm::container::map<VertexID, std::vector<alias_table_item>>  m_alias_tables;
+    using weighted_edge = std::pair<vertex_t, double>;
+    ygm::container::map<vertex_t, std::vector<weighted_edge>>     m_weighted_adj_lists;
+    multi_alias_table<vertex_t, vertex_t, double, RNG>            m_delegated_alias_tables;
+    ygm::container::map<vertex_t, std::vector<alias_table_item>>  m_alias_tables;
 
   public:
 
-    ygm::container::counting_set<VertexID>                m_cs;
+    ygm::container::counting_set<vertex_t>                m_cs;
 
     RaNT_Graph(ygm::comm& comm, uint32_t d_thresh, RNG& rng, bool weighted = false, bool directed = false) : 
                   m_comm(comm),
@@ -78,9 +81,9 @@ class RaNT_Graph {
     
     void construct_graph() {
       {
-        using degree_t = VertexID; // Degree of vertex is upperbounded by num of vertices in graph;
-        std::unordered_map<VertexID,degree_t> local_vertex_degrees;
-        std::unordered_map<VertexID,degree_t> vertex_degrees;
+        using degree_t = vertex_t; // Degree of vertex is upperbounded by num of vertices in graph;
+        std::unordered_map<vertex_t,degree_t> local_vertex_degrees;
+        std::unordered_map<vertex_t,degree_t> vertex_degrees;
         auto ptr_v_degrees = m_comm.make_ygm_ptr(vertex_degrees);
         m_comm.barrier(); // Ensure ygm_ptr created on every rank
         for (Edge e : m_local_edges) {
@@ -91,7 +94,7 @@ class RaNT_Graph {
             }
           }
         }      
-        auto add_to_degree = [](VertexID v, degree_t amount, auto ptr_vertex_degrees){
+        auto add_to_degree = [](vertex_t v, degree_t amount, auto ptr_vertex_degrees){
           if (ptr_vertex_degrees->find(v) != ptr_vertex_degrees->end()) {
             ptr_vertex_degrees->at(v) = ptr_vertex_degrees->at(v) + amount;
           } else {
@@ -103,7 +106,7 @@ class RaNT_Graph {
           m_comm.async(dest, add_to_degree, v, degree, ptr_v_degrees);
         }
         m_comm.barrier();
-        using vrtx_deg_vec = std::vector<std::pair<VertexID,degree_t>>;
+        using vrtx_deg_vec = std::vector<std::pair<vertex_t,degree_t>>;
         vrtx_deg_vec my_delegated_vertex_degrees;
         for (const auto & [v, degree] : vertex_degrees) {
           ASSERT_RELEASE(owner(v) == m_comm.rank());
@@ -132,8 +135,8 @@ class RaNT_Graph {
         };
 
         for (auto& edge : m_local_edges) {
-          VertexID src = std::get<0>(edge);
-          VertexID dst = std::get<1>(edge);
+          vertex_t src = std::get<0>(edge);
+          vertex_t dst = std::get<1>(edge);
           double w = get_edge_weight(edge);
 
           if (src != dst) {
@@ -176,54 +179,58 @@ class RaNT_Graph {
         // each rank distribute edges as needed. Later should probably use some sort of distribution method similar
         // to that of how the multi_alias tables are built
         // ygm::ygm_ptr local_scope_pthis = pthis;
+        // m_comm.cout0("Before 1D Partitioning");
+        // int64_t bytes = 0;
+        // for (auto& edge : m_local_edges) {
+        //   bytes += 16;
+        // }
+        // m_comm.cout("My bytes: ", bytes);
+        
+
         for (auto& edge : m_local_edges) {
-          VertexID src = std::get<0>(edge);
-          VertexID dst = std::get<1>(edge);
+          vertex_t src = std::get<0>(edge);
+          vertex_t dst = std::get<1>(edge);
           if (src != dst) { // Not currently supporting self edges, probably could
             auto add_to_adjacency_list = [](const auto& key, auto& adj_list, const auto& new_adj_list) {
               adj_list.push_back(new_adj_list[0]);
             };
-            std::vector<VertexID> src_adj_list = {dst};
+            std::vector<vertex_t> src_adj_list = {dst};
             m_adj_lists.async_insert_if_missing_else_visit(src, src_adj_list, add_to_adjacency_list);
             if (!m_directed) {
-              std::vector<VertexID> dst_adj_list = {src};
+              std::vector<vertex_t> dst_adj_list = {src};
               m_adj_lists.async_insert_if_missing_else_visit(dst, dst_adj_list, add_to_adjacency_list); 
             }
           }
         }
+
+        m_local_edges.clear();
         m_comm.barrier(); 
         {
           std::vector<Edge> empty_vec;
           std::swap(empty_vec, m_local_edges); // Free the memory of m_local_edges
         }
-        // Remove duplicates from adjacency lists
+
+        // m_comm.cout0("After 1D partitioning");
+        // bytes = 0;
         // m_adj_lists.for_all([&](const auto& v, auto& adj_list) {
-        //   size_t old_s = adj_list.size();
-        //   std::sort( adj_list.begin(), adj_list.end() );
-        //   adj_list.erase(std::unique( adj_list.begin(), adj_list.end() ), adj_list.end() );
-        //   size_t new_s = adj_list.size();
-        //   if (old_s != new_s) {
-        //     m_comm.cout("Old: ", old_s, ", New: ", new_s);
-        //   }
+        //   bytes += adj_list.size() * 4; 
+        //   bytes += 4; 
         // });
-        // Sanity Check
-        // m_adj_lists.for_all([&](const auto& v, auto& adj_list) {
-        //   ASSERT_RELEASE(adj_list.size() == m_delegated_vertex_degrees[v]);
-        // });
+        // m_comm.cout("My bytes: ", bytes);
         
         for (auto &v_degree : m_delegated_vertex_degrees) {
-          VertexID v = v_degree.first;
+          vertex_t v = v_degree.first;
 
           auto delegate = [](const auto& v, auto& adj_list, self_ygm_ptr_type pthis) {
             ASSERT_RELEASE(adj_list.size() == pthis->m_delegated_vertex_degrees[v]);
 
-            auto delegator = [](VertexID v, std::vector<VertexID> delegated_adj_list, uint64_t degree, self_ygm_ptr_type pthis) {
+            auto delegator = [](vertex_t v, std::vector<vertex_t> delegated_adj_list, vertex_t degree, self_ygm_ptr_type pthis) {
               pthis->m_local_delegated_adj_lists.insert({v, delegated_adj_list});
             };
 
             int total = 0;
             for (int r = 0; r < pthis->m_comm.size(); r++) {
-              std::vector<VertexID> part_of_adj;
+              std::vector<vertex_t> part_of_adj;
               for (int i = r; i < adj_list.size(); i += pthis->m_comm.size()) {
                 part_of_adj.push_back(adj_list.at(i));
               }
@@ -261,7 +268,7 @@ class RaNT_Graph {
     }
 
     void build_local_alias_tables() {
-      m_weighted_adj_lists.for_all([&](const VertexID& vertex, std::vector<weighted_edge>& adj_list){
+      m_weighted_adj_lists.for_all([&](const vertex_t& vertex, std::vector<weighted_edge>& adj_list){
 
         double total_weight = 0.0;
         for (auto& e : adj_list) {
@@ -329,11 +336,11 @@ class RaNT_Graph {
 
     /*
 
-    void start_path(VertexID v, uint32_t l) { 
+    void start_path(vertex_t v, uint32_t l) { 
 
-      std::set<VertexID> path{}; // First vertex will be added to path at beginning of called functor
+      std::set<vertex_t> path{}; // First vertex will be added to path at beginning of called functor
       if (m_delegated_vertex_degrees.find(v) != m_delegated_vertex_degrees.end()) {
-        std::uniform_int_distribution<VertexID> dis(0, m_delegated_vertex_degrees[v]-1);
+        std::uniform_int_distribution<vertex_t> dis(0, m_delegated_vertex_degrees[v]-1);
         uint32_t global_idx = dis(m_rng);
         // m_comm.async(owner(global_idx), 
         //              async_delegated_path_step(), 
@@ -353,7 +360,7 @@ class RaNT_Graph {
 
       for (int p = 0; p < ranks_total_paths; p++) {
         uint32_t path_length = dis(m_rng);
-        VertexID vertex = select_randomly_from_vec(m_local_vertices.begin(), m_local_vertices.end(), m_rng); 
+        vertex_t vertex = select_randomly_from_vec(m_local_vertices.begin(), m_local_vertices.end(), m_rng); 
         start_path(vertex, path_length);  
       }
 
@@ -362,7 +369,7 @@ class RaNT_Graph {
     */
 
 
-    void start_walk(VertexID v, uint32_t target_walk_length) {
+    void start_walk(vertex_t v, uint32_t target_walk_length) {
       if (m_weighted) {
         if (m_delegated_vertex_degrees.find(v) != m_delegated_vertex_degrees.end()) {
           m_delegated_alias_tables.async_sample(v, async_bias_delegated_walk_step(), 0, target_walk_length, pthis);
@@ -371,7 +378,7 @@ class RaNT_Graph {
         }
       } else {
         if (m_delegated_vertex_degrees.find(v) != m_delegated_vertex_degrees.end()) {
-          std::uniform_int_distribution<VertexID> dis(0, m_delegated_vertex_degrees.at(v)-1);
+          std::uniform_int_distribution<vertex_t> dis(0, m_delegated_vertex_degrees.at(v)-1);
           ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(v) > 0);
           uint32_t global_idx = dis(m_rng);
           m_comm.async(owner(global_idx), 
@@ -390,7 +397,7 @@ class RaNT_Graph {
       uint64_t ranks_total_paths = n / m_comm.size() + (n % m_comm.size() > m_comm.rank());
 
       for (int p = 0; p < ranks_total_paths; p++) {
-        VertexID vertex = select_randomly_from_vec(m_local_vertices.begin(), m_local_vertices.end(), m_rng); 
+        vertex_t vertex = select_randomly_from_vec(m_local_vertices.begin(), m_local_vertices.end(), m_rng); 
         start_walk(vertex, target_walk_length);  
       }
 
@@ -413,21 +420,20 @@ class RaNT_Graph {
       }
     }
 
-    // uint32_t owner(uint64_t vertex_id) {
-    uint32_t owner(VertexID vertex_id) {
+    inline uint32_t owner(vertex_t vertex_id) {
       return (uint32_t) (vertex_id % m_comm.size());
     }
 
-    uint64_t local_idx(VertexID global_idx) {
+    inline uint32_t local_idx(vertex_t global_idx) {
       return global_idx / m_comm.size();
     }
 
-    double get_edge_weight(std::pair<VertexID,VertexID>& edge) {
+    double get_edge_weight(std::pair<vertex_t,vertex_t>& edge) {
       return 1.0;
       // return void();
     }
 
-    double get_edge_weight(std::tuple<VertexID,VertexID,double>& edge) {
+    double get_edge_weight(std::tuple<vertex_t,vertex_t,double>& edge) {
       return std::get<2>(edge);
     }
 
@@ -435,13 +441,13 @@ class RaNT_Graph {
     template<typename Container>
     void construct_from_edge_container(Container &cont) {
       // Need to check if for_all can be called on container. Do this later
-      // For now assume its a bag of std::pair<VertexID, VertexID>
+      // For now assume its a bag of std::pair<vertex_t, vertex_t>
       ygm::ygm_ptr local_pthis = pthis;
 
-      cont.for_all([&](VertexID v1, VertexID v2){
+      cont.for_all([&](vertex_t v1, vertex_t v2){
         if (v1 != v2) {
-          std::vector<VertexID> adj_list_1 = {v2};
-          std::vector<VertexID> adj_list_2 = {v1};
+          std::vector<vertex_t> adj_list_1 = {v2};
+          std::vector<vertex_t> adj_list_2 = {v1};
           auto add_to_adjacency_list = [](const auto& key, auto& adj_list, const auto& new_adj_list) {
             adj_list.push_back(new_adj_list[0]);
           };
@@ -454,7 +460,7 @@ class RaNT_Graph {
 
       // Determine which vertices to delegate and remove duplicates from adjacency lists
       uint64_t total_edges = 0;
-      std::vector<VertexID> vertices_to_delegate;
+      std::vector<vertex_t> vertices_to_delegate;
       m_adj_lists.for_all([&](const auto& v, auto& adj_list) {
         std::sort( adj_list.begin(), adj_list.end() );
         adj_list.erase( std::unique( adj_list.begin(), adj_list.end() ), adj_list.end() );
@@ -468,13 +474,13 @@ class RaNT_Graph {
 
         auto delegate = [](const auto& v, auto& adj_list, self_ygm_ptr_type pthis) {
 
-          auto delegator = [](VertexID v, std::vector<VertexID> delegated_adj_list, uint64_t degree, self_ygm_ptr_type pthis) {
+          auto delegator = [](vertex_t v, std::vector<vertex_t> delegated_adj_list, uint64_t degree, self_ygm_ptr_type pthis) {
             pthis->m_local_delegated_adj_lists.insert({v, delegated_adj_list});
             pthis->m_delegated_vertex_degrees.insert({v, degree});
           };
           int total = 0;
           for (int r = 0; r < pthis->m_comm.size(); r++) {
-            std::vector<VertexID> part_of_adj;
+            std::vector<vertex_t> part_of_adj;
             for (int i = r; i < adj_list.size(); i += pthis->m_comm.size()) {
               part_of_adj.push_back(adj_list.at(i));
             }
@@ -515,9 +521,9 @@ class RaNT_Graph {
     /*
     struct async_path_step {            
       
-      void operator()(VertexID vertex,
-                        std::vector<VertexID> adj_list,
-                        std::set<VertexID> path, uint32_t l, self_ygm_ptr_type pthis) {
+      void operator()(vertex_t vertex,
+                        std::vector<vertex_t> adj_list,
+                        std::set<vertex_t> path, uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         path.insert(vertex);
         pthis->m_cs.async_insert(vertex);
@@ -527,7 +533,7 @@ class RaNT_Graph {
           // if (adj_list.size() > pthis->m_rejection_threshold) {
           if (adj_list.size() > l) {
             bool found_unvisited = false;
-            VertexID next_vertex;
+            vertex_t next_vertex;
             while (!found_unvisited) {
               next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
               if (path.find(next_vertex) == path.end()) {
@@ -535,7 +541,7 @@ class RaNT_Graph {
               }
             }
             if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
-              std::uniform_int_distribution<VertexID> dis(0, pthis->m_delegated_vertex_degrees[next_vertex]-1);
+              std::uniform_int_distribution<vertex_t> dis(0, pthis->m_delegated_vertex_degrees[next_vertex]-1);
               uint64_t global_idx = dis(pthis->m_rng);
               pthis->m_comm.async(pthis->owner(global_idx),
                                   async_delegated_path_step(),
@@ -545,14 +551,14 @@ class RaNT_Graph {
               pthis->m_adj_lists.async_visit(next_vertex, async_path_step(), path, l, pthis);
             }
           } else {
-            std::vector<VertexID> unvisited;
-            for (VertexID &v : adj_list) {
+            std::vector<vertex_t> unvisited;
+            for (vertex_t &v : adj_list) {
               if (path.find(v) == path.end()) {
                 unvisited.push_back(v);
               }
             } 
             if (unvisited.size() > 0) {
-              VertexID next_vertex = select_randomly_from_vec(unvisited.begin(), unvisited.end(), pthis->m_rng);
+              vertex_t next_vertex = select_randomly_from_vec(unvisited.begin(), unvisited.end(), pthis->m_rng);
               if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
                 std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees[next_vertex]-1);
                 uint64_t global_idx = dis(pthis->m_rng);
@@ -617,8 +623,8 @@ class RaNT_Graph {
 
     struct async_walk_step {            
       
-      void operator()(VertexID vertex,
-                        std::vector<VertexID> adj_list,
+      void operator()(vertex_t vertex,
+                        std::vector<vertex_t> adj_list,
                         uint32_t walk_length, uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
         // path.insert(vertex);
@@ -626,12 +632,12 @@ class RaNT_Graph {
         // pthis->m_cs.async_insert(vertex);
         walk_length++;
         if (walk_length < l && adj_list.size() > 0) {
-            VertexID next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
+            vertex_t next_vertex = select_randomly_from_vec(adj_list.begin(), adj_list.end(), pthis->m_rng);
             // if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
             if (pthis->m_delegated_vertex_degrees.find(next_vertex) != pthis->m_delegated_vertex_degrees.end()) {
-              std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
+              std::uniform_int_distribution<vertex_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
               ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(next_vertex) > 0);
-              uint64_t global_idx = dis(pthis->m_rng);
+              vertex_t global_idx = dis(pthis->m_rng);
               pthis->m_comm.async(pthis->owner(global_idx),
                                   async_delegated_walk_step(),
                                   next_vertex,
@@ -648,8 +654,8 @@ class RaNT_Graph {
 
     struct async_delegated_walk_step {            
 
-      void operator()(VertexID vertex,
-                      uint64_t local_idx,
+      void operator()(vertex_t vertex,
+                      uint32_t local_idx,
                       uint32_t walk_length,
                       uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside delegated step functor on rank ", pthis->m_comm.rank(), " at vertex ", vertex);
@@ -658,12 +664,12 @@ class RaNT_Graph {
         // pthis->m_cs.async_insert(vertex);
         walk_length++;
         if (walk_length < l) { 
-          VertexID next_vertex = pthis->m_local_delegated_adj_lists.at(vertex).at(local_idx); 
+          vertex_t next_vertex = pthis->m_local_delegated_adj_lists.at(vertex).at(local_idx); 
           // if (pthis->m_local_delegated_adj_lists.find(next_vertex) != pthis->m_local_delegated_adj_lists.end()) {
           if (pthis->m_delegated_vertex_degrees.find(next_vertex) != pthis->m_delegated_vertex_degrees.end()) {
-            std::uniform_int_distribution<uint64_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
+            std::uniform_int_distribution<vertex_t> dis(0, pthis->m_delegated_vertex_degrees.at(next_vertex)-1);
             ASSERT_RELEASE(pthis->m_delegated_vertex_degrees.at(next_vertex) > 0);
-            uint64_t global_idx = dis(pthis->m_rng);
+            vertex_t global_idx = dis(pthis->m_rng);
 
             pthis->m_comm.async(pthis->owner(global_idx),
                                 async_delegated_walk_step(), 
@@ -679,10 +685,10 @@ class RaNT_Graph {
     };
 
     
-    VertexID bias_sample_edge(std::vector<alias_table_item>& alias_table) {
+    vertex_t bias_sample_edge(std::vector<alias_table_item>& alias_table) {
       // Sample outgoing edge of v. Should be called by process which owns v via 1D partitioned
       alias_table_item itm = select_randomly_from_vec(alias_table.begin(), alias_table.end(), m_rng); 
-      VertexID s;
+      vertex_t s;
       if (std::get<0>(itm) == 1) {
           s = std::get<1>(itm);
       } else {
@@ -701,8 +707,8 @@ class RaNT_Graph {
       //  next_vertex is the vertex sampled from curr_vertex distributed alias table 
       //  No single process owns curr_vertex, every vertex owns an equal portion of curr_vertex's 
       //  alias table thus the processor running this is code is randomly chosen. 
-      void operator()(VertexID next_vertex,
-                      VertexID curr_vertex,
+      void operator()(vertex_t next_vertex,
+                      vertex_t curr_vertex,
                       uint32_t walk_length,
                       uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside delegated step functor on rank ", pthis->m_comm.rank(), " at vertex ", curr_vertex);
@@ -726,14 +732,14 @@ class RaNT_Graph {
 
     struct async_bias_walk_step {            
       // This functor is called by the process which owns the vertex argument. Vertex should not be delegated. 
-      void operator()(VertexID curr_vertex,
+      void operator()(vertex_t curr_vertex,
                         std::vector<alias_table_item> alias_table,
                         uint32_t walk_length, uint32_t l, self_ygm_ptr_type pthis) {
         // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", curr_vertex);
         // pthis->m_cs.async_insert(curr_vertex); 
         walk_length++;
         if (walk_length < l && alias_table.size() > 0) {
-            VertexID next_vertex = pthis->bias_sample_edge(alias_table);
+            vertex_t next_vertex = pthis->bias_sample_edge(alias_table);
             // pthis->m_comm.cout("Made it inside step functor on rank ", pthis->m_comm.rank(), " at vertex ", curr_vertex, " stepping to ", next_vertex);
             if (pthis->m_delegated_vertex_degrees.find(next_vertex) != pthis->m_delegated_vertex_degrees.end()) {
               // pthis->m_comm.cout("Taking delegated step");

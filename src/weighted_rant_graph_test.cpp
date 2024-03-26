@@ -19,8 +19,8 @@ int main(int argc, char** argv) {
     // std::string filename = "/g/g20/lancef/graphs/facebook_combined.txt";
     // std::string filename = "/g/g20/lancef/graphs/karate_club.txt";
     // std::string filename = "/p/lustre2/havoqgtu/LiveJournal/edge.txt";
-    std::string filename = "/p/lustre2/havoqgtu/trevor_twitter";
-    // std::string filename = "/p/lustre2/havoqgtu/lance/uk-2007-05_graph.txt";
+    // std::string filename = "/p/lustre2/havoqgtu/trevor_twitter";
+    std::string filename = "/p/lustre2/havoqgtu/lance/uk-2007-05_graph.txt";
     world.welcome();
 
     // RaNT_Graph<uint32_t,double> weighted_rant_graph(world, world.size(), rng, true);
@@ -52,7 +52,8 @@ int main(int argc, char** argv) {
     world.barrier();
 
     // uint32_t n_walks = 134000000;
-    uint32_t n_walks = 41700000;
+    uint32_t n_walks = 105000000;
+    // uint32_t n_walks = 41700000;
     uint32_t walk_length = 80;
 
     world.cout0("Taking walks on RaNT-Graph");
